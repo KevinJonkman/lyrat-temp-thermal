@@ -1,0 +1,9 @@
+.pio
+.vscode
+.idea
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+*.map
