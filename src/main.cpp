@@ -12,12 +12,22 @@
 #include <SPIFFS.h>
 #include <FS.h>
 #include <ArduinoOTA.h>
+#include "Audio.h"          // ESP32-audioI2S (Schreibfaul1)
 
 // ============== PIN DEFINITIONS (ESP32 LyraT) ==============
 #define ONE_WIRE_BUS    13   // DS18B20 data pin (both sensors on same bus)
 #define MLX_SDA_PIN     15   // MLX90640 I2C SDA (Wire1)
 #define MLX_SCL_PIN     14   // MLX90640 I2C SCL (Wire1)
 #define BLUE_LED_PIN    22   // Blue LED on LyraT
+
+// ============== AUDIO (LyraT ES8388) ==============
+#define PA_ENABLE_PIN   21   // Power Amplifier enable
+#define AUDIO_I2C_SDA   18   // ES8388 I2C SDA
+#define AUDIO_I2C_SCL   23   // ES8388 I2C SCL
+#define ES8388_ADDR     0x10
+#define I2S_BCLK_PIN    5
+#define I2S_LRCK_PIN    25
+#define I2S_DOUT_PIN    26
 
 // ============== WiFi ==============
 const char* WIFI_SSID = "BTAC Medewerkers";
@@ -53,6 +63,57 @@ unsigned long lastLogWrite = 0;
 #define LOG_INTERVAL_MS 2000
 #define LOG_FILE "/templog.csv"
 #define MAX_LOG_SIZE 500000
+
+// ============== AUDIO ==============
+Audio audio;
+bool audioReady = false;
+
+void es8388_write(uint8_t reg, uint8_t val) {
+  Wire.beginTransmission(ES8388_ADDR);
+  Wire.write(reg);
+  Wire.write(val);
+  Wire.endTransmission();
+}
+
+void setupAudio() {
+  // Enable PA
+  pinMode(PA_ENABLE_PIN, OUTPUT);
+  digitalWrite(PA_ENABLE_PIN, HIGH);
+
+  // Init I2C for ES8388 (Wire0 — Wire1 is used by MLX)
+  Wire.begin(AUDIO_I2C_SDA, AUDIO_I2C_SCL);
+  delay(50);
+
+  // ES8388 init sequence (from Memoircy)
+  es8388_write(0x00, 0x80); delay(100); // Reset
+  es8388_write(0x00, 0x06); delay(50);  // Chip power on
+  es8388_write(0x01, 0x40);             // Power management
+  // DAC config
+  es8388_write(0x04, 0x3C);             // DAC power on
+  es8388_write(0x17, 0x18);             // DAC control
+  es8388_write(0x18, 0x02);             // DAC format: I2S 16bit
+  // Output mixer
+  es8388_write(0x26, 0x09);             // Left mixer
+  es8388_write(0x27, 0x90);             // Right mixer
+  // Volume (0x00=max, 0x21=min)
+  es8388_write(0x2E, 0x1C);             // LOUT1 vol
+  es8388_write(0x2F, 0x1C);             // ROUT1 vol
+  es8388_write(0x30, 0x1C);             // LOUT2 vol
+  es8388_write(0x31, 0x1C);             // ROUT2 vol
+
+  // Setup I2S via Audio library
+  audio.setPinout(I2S_BCLK_PIN, I2S_LRCK_PIN, I2S_DOUT_PIN);
+  audio.setVolume(15); // 0-21
+
+  audioReady = true;
+  Serial.println("[AUDIO] ES8388 + I2S initialized");
+}
+
+void say(const char* text) {
+  if (!audioReady) return;
+  Serial.printf("[AUDIO] TTS: %s\n", text);
+  audio.connecttospeech(text, "en");
+}
 
 // ============== DS18B20 SETUP ==============
 void setupDS18B20() {
@@ -252,6 +313,22 @@ void handleLogInfo() {
   j += ",\"freeSpace\":" + String(spiffsReady ? (SPIFFS.totalBytes() - SPIFFS.usedBytes()) : 0);
   j += "}";
   server.send(200, "application/json", j);
+}
+
+// ============== WEB: SPEECH ENDPOINT ==============
+void handleSay() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  if (!audioReady) {
+    server.send(500, "application/json", "{\"ok\":false,\"msg\":\"Audio not ready\"}");
+    return;
+  }
+  String text = server.arg("t");
+  if (text.length() == 0) {
+    server.send(400, "application/json", "{\"ok\":false,\"msg\":\"Missing ?t= parameter\"}");
+    return;
+  }
+  say(text.c_str());
+  server.send(200, "application/json", "{\"ok\":true}");
 }
 
 // ============== WEB: MAIN PAGE ==============
@@ -495,7 +572,7 @@ void handleRescan() {
   Serial.println("[DS18B20] Scanning multiple pins...");
   for (int p = 0; p < numTryPins; p++) {
     OneWire testBus(tryPins[p]);
-    byte testAddr[8];
+    uint8_t testAddr[8];
     testBus.reset_search();
     delay(100);
     int cnt = 0;
@@ -507,7 +584,7 @@ void handleRescan() {
   Serial.printf("[DS18B20] Detailed scan on GPIO %d:\n", ONE_WIRE_BUS);
 
   // Raw OneWire search
-  byte addr[8];
+  uint8_t addr[8];
   int found = 0;
   String j = "{\"addresses\":[";
 
@@ -594,6 +671,9 @@ void setup() {
   // SPIFFS
   initSPIFFS();
 
+  // Audio (ES8388 + I2S)
+  setupAudio();
+
   // DS18B20
   setupDS18B20();
 
@@ -632,6 +712,7 @@ void setup() {
   server.on("/download", handleDownload);
   server.on("/deletelog", handleDeleteLog);
   server.on("/loginfo", handleLogInfo);
+  server.on("/say", handleSay);
   server.begin();
 
   // Initial temp request
@@ -639,12 +720,16 @@ void setup() {
 
   digitalWrite(BLUE_LED_PIN, HIGH);
   Serial.printf("\nReady: http://%s\n", WiFi.localIP().toString().c_str());
+
+  // Startup announcement
+  say("Sensor hub online");
 }
 
 // ============== LOOP ==============
 void loop() {
   ArduinoOTA.handle();
   server.handleClient();
+  audio.loop();
   yield();
 
   // MLX read (~250ms block at 4Hz, every 500ms)
