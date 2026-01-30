@@ -76,43 +76,68 @@ void es8388_write(uint8_t reg, uint8_t val) {
 }
 
 void setupAudio() {
-  // Enable PA
+  // Enable PA (power amplifier)
   pinMode(PA_ENABLE_PIN, OUTPUT);
   digitalWrite(PA_ENABLE_PIN, HIGH);
+  Serial.println("[AUDIO] PA enabled");
 
   // Init I2C for ES8388 (Wire0 — Wire1 is used by MLX)
   Wire.begin(AUDIO_I2C_SDA, AUDIO_I2C_SCL);
-  delay(50);
+  delay(100);
 
-  // ES8388 init sequence (from Memoircy)
-  es8388_write(0x00, 0x80); delay(100); // Reset
-  es8388_write(0x00, 0x06); delay(50);  // Chip power on
-  es8388_write(0x01, 0x40);             // Power management
-  // DAC config
-  es8388_write(0x04, 0x3C);             // DAC power on
-  es8388_write(0x17, 0x18);             // DAC control
-  es8388_write(0x18, 0x02);             // DAC format: I2S 16bit
+  // Verify ES8388 is on the bus
+  Wire.beginTransmission(ES8388_ADDR);
+  uint8_t i2cErr = Wire.endTransmission();
+  Serial.printf("[AUDIO] ES8388 I2C probe (0x%02X): %s\n", ES8388_ADDR,
+    i2cErr == 0 ? "FOUND" : "NOT FOUND");
+  if (i2cErr != 0) {
+    Serial.printf("[AUDIO] I2C error code: %d (SDA=%d SCL=%d)\n",
+      i2cErr, AUDIO_I2C_SDA, AUDIO_I2C_SCL);
+    return;
+  }
+
+  // ES8388 full init sequence (verified from Memoircy project)
+  es8388_write(0x00, 0x80); delay(100);  // Reset
+  es8388_write(0x00, 0x06); delay(50);   // Chip power on, enable ref
+  es8388_write(0x01, 0x40);              // Power management: vmid on
+  es8388_write(0x02, 0x00);              // Power management 2
+  es8388_write(0x03, 0x00);              // ADC power (off, we only need DAC)
+  es8388_write(0x04, 0x3C);              // DAC power: L+R DAC on, LOUT1/ROUT1 on
+  es8388_write(0x08, 0x00);              // Master mode control
+  // DAC control
+  es8388_write(0x17, 0x18);              // DAC ctrl: I2S 16bit
+  es8388_write(0x18, 0x02);              // DAC ctrl2: DEM off
+  es8388_write(0x19, 0x22);              // DAC ctrl3
+  // DAC volume
+  es8388_write(0x1A, 0x00);              // LDAC VOL = 0dB (max)
+  es8388_write(0x1B, 0x00);              // RDAC VOL = 0dB (max)
   // Output mixer
-  es8388_write(0x26, 0x09);             // Left mixer
-  es8388_write(0x27, 0x90);             // Right mixer
-  // Volume (0x00=max, 0x21=min)
-  es8388_write(0x2E, 0x1C);             // LOUT1 vol
-  es8388_write(0x2F, 0x1C);             // ROUT1 vol
-  es8388_write(0x30, 0x1C);             // LOUT2 vol
-  es8388_write(0x31, 0x1C);             // ROUT2 vol
+  es8388_write(0x26, 0x09);              // Left mixer: LDAC to LOUT
+  es8388_write(0x27, 0x90);              // Right mixer: RDAC to ROUT
+  // Output volume (0x00=+0dB ... 0x21=-45dB, 0x24=min)
+  es8388_write(0x2E, 0x1E);              // LOUT1 vol
+  es8388_write(0x2F, 0x1E);              // ROUT1 vol
+  es8388_write(0x30, 0x1E);              // LOUT2 vol
+  es8388_write(0x31, 0x1E);              // ROUT2 vol
+  Serial.println("[AUDIO] ES8388 codec initialized");
 
-  // Setup I2S via Audio library
-  audio.setPinout(I2S_BCLK_PIN, I2S_LRCK_PIN, I2S_DOUT_PIN);
+  // Setup I2S via Audio library — MCLK on GPIO 0 is critical for ES8388
+  audio.setPinout(I2S_BCLK_PIN, I2S_LRCK_PIN, I2S_DOUT_PIN, 0);
   audio.setVolume(15); // 0-21
+  Serial.println("[AUDIO] I2S configured (BCLK=5 LRC=25 DOUT=26 MCLK=0)");
 
   audioReady = true;
-  Serial.println("[AUDIO] ES8388 + I2S initialized");
+  Serial.println("[AUDIO] Ready");
 }
 
 void say(const char* text) {
-  if (!audioReady) return;
-  Serial.printf("[AUDIO] TTS: %s\n", text);
-  audio.connecttospeech(text, "en");
+  if (!audioReady) {
+    Serial.println("[AUDIO] say() skipped — audio not ready");
+    return;
+  }
+  Serial.printf("[AUDIO] TTS: \"%s\"\n", text);
+  bool ok = audio.connecttospeech(text, "en");
+  Serial.printf("[AUDIO] connecttospeech returned: %s\n", ok ? "OK" : "FAIL");
 }
 
 // ============== DS18B20 SETUP ==============
