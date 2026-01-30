@@ -9,6 +9,9 @@
 #include <DallasTemperature.h>
 #include <Wire.h>
 #include <Adafruit_MLX90640.h>
+#include <SPIFFS.h>
+#include <FS.h>
+#include <ArduinoOTA.h>
 
 // ============== PIN DEFINITIONS (ESP32 LyraT) ==============
 #define ONE_WIRE_BUS    13   // DS18B20 data pin (both sensors on same bus)
@@ -42,8 +45,32 @@ unsigned long lastDsRequest = 0;
 bool dsConversionRequested = false;
 unsigned long lastMlxRead = 0;
 
+// ============== SPIFFS LOGGING ==============
+bool spiffsReady = false;
+bool loggingEnabled = false;
+unsigned long logStartTime = 0;
+unsigned long lastLogWrite = 0;
+#define LOG_INTERVAL_MS 2000
+#define LOG_FILE "/templog.csv"
+#define MAX_LOG_SIZE 500000
+
 // ============== DS18B20 SETUP ==============
 void setupDS18B20() {
+  // Diagnostic: test GPIO 13 state before and after pull-up
+  Serial.printf("[DS18B20] GPIO %d raw read: %d\n", ONE_WIRE_BUS, digitalRead(ONE_WIRE_BUS));
+  pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
+  delay(100);
+  Serial.printf("[DS18B20] GPIO %d after INPUT_PULLUP: %d\n", ONE_WIRE_BUS, digitalRead(ONE_WIRE_BUS));
+
+  // Try to drive HIGH manually to test if something is pulling LOW
+  pinMode(ONE_WIRE_BUS, OUTPUT);
+  digitalWrite(ONE_WIRE_BUS, HIGH);
+  delay(10);
+  Serial.printf("[DS18B20] GPIO %d after drive HIGH: %d\n", ONE_WIRE_BUS, digitalRead(ONE_WIRE_BUS));
+  pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
+  delay(100);
+  Serial.printf("[DS18B20] GPIO %d back to INPUT_PULLUP: %d\n", ONE_WIRE_BUS, digitalRead(ONE_WIRE_BUS));
+
   dsSensors.begin();
   dsCount = dsSensors.getDeviceCount();
   Serial.printf("[DS18B20] Found %d sensor(s)\n", dsCount);
@@ -128,6 +155,105 @@ void dsReadResults() {
   }
 }
 
+// ============== SPIFFS INIT ==============
+void initSPIFFS() {
+  if (SPIFFS.begin(true)) {
+    spiffsReady = true;
+    Serial.printf("[SPIFFS] Mounted. Total: %u, Used: %u\n",
+      SPIFFS.totalBytes(), SPIFFS.usedBytes());
+  } else {
+    Serial.println("[SPIFFS] Mount FAILED");
+  }
+}
+
+// ============== TEMP LOGGING ==============
+void startTempLog() {
+  if (!spiffsReady) return;
+  File f = SPIFFS.open(LOG_FILE, FILE_WRITE);
+  if (f) {
+    f.println("timestamp,t1,t2,mlx_max,mlx_avg");
+    f.close();
+    loggingEnabled = true;
+    logStartTime = millis();
+    lastLogWrite = 0;
+    Serial.println("[LOG] Temp logging started");
+  }
+}
+
+void appendTempLog() {
+  if (!spiffsReady || !loggingEnabled) return;
+  if (millis() - lastLogWrite < LOG_INTERVAL_MS) return;
+  lastLogWrite = millis();
+
+  File f = SPIFFS.open(LOG_FILE, FILE_APPEND);
+  if (!f) return;
+
+  if (f.size() > MAX_LOG_SIZE) {
+    f.close();
+    loggingEnabled = false;
+    Serial.println("[LOG] Max size reached, logging stopped");
+    return;
+  }
+
+  unsigned long elapsed = (millis() - logStartTime) / 1000;
+  char line[80];
+  snprintf(line, sizeof(line), "%lu,%.2f,%.2f,%.1f,%.1f",
+    elapsed, dsTemp1, dsTemp2, mlxMax, mlxAvg);
+  f.println(line);
+  f.close();
+}
+
+// ============== WEB: LOG ENDPOINTS ==============
+void handleStartLog() {
+  startTempLog();
+  server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Logging started\"}");
+}
+
+void handleStopLog() {
+  loggingEnabled = false;
+  Serial.println("[LOG] Logging stopped");
+  server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Logging stopped\"}");
+}
+
+void handleDownload() {
+  if (!spiffsReady || !SPIFFS.exists(LOG_FILE)) {
+    server.send(404, "text/plain", "No log file");
+    return;
+  }
+  File f = SPIFFS.open(LOG_FILE, FILE_READ);
+  if (!f) {
+    server.send(500, "text/plain", "Cannot open file");
+    return;
+  }
+  server.streamFile(f, "text/csv");
+  f.close();
+}
+
+void handleDeleteLog() {
+  if (loggingEnabled) {
+    loggingEnabled = false;
+  }
+  if (spiffsReady && SPIFFS.exists(LOG_FILE)) {
+    SPIFFS.remove(LOG_FILE);
+  }
+  server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Log deleted\"}");
+}
+
+void handleLogInfo() {
+  size_t fileSize = 0;
+  if (spiffsReady && SPIFFS.exists(LOG_FILE)) {
+    File f = SPIFFS.open(LOG_FILE, FILE_READ);
+    if (f) { fileSize = f.size(); f.close(); }
+  }
+  String j = "{\"logging\":" + String(loggingEnabled ? "true" : "false");
+  j += ",\"size\":" + String(fileSize);
+  j += ",\"totalSpace\":" + String(spiffsReady ? SPIFFS.totalBytes() : 0);
+  j += ",\"usedSpace\":" + String(spiffsReady ? SPIFFS.usedBytes() : 0);
+  j += ",\"freeSpace\":" + String(spiffsReady ? (SPIFFS.totalBytes() - SPIFFS.usedBytes()) : 0);
+  j += "}";
+  server.send(200, "application/json", j);
+}
+
 // ============== WEB: MAIN PAGE ==============
 void handleRoot() {
   String h = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
@@ -143,6 +269,8 @@ void handleRoot() {
   h += ".thermal{text-align:center;margin:10px 0}";
   h += "canvas{border:1px solid #333;border-radius:4px;max-width:100%}";
   h += ".warn{color:#f80}.err{color:#f44}.ok{color:#0f0}";
+  h += ".btn{padding:8px 16px;border:none;border-radius:4px;cursor:pointer;font-family:monospace;font-size:0.9em;margin:3px}";
+  h += ".bg{background:#0a0;color:#fff}.br{background:#a00;color:#fff}.bb{background:#07f;color:#fff}.by{background:#a80;color:#fff}";
   h += "</style></head><body>";
   h += "<h1>LyraT Sensor Hub</h1>";
 
@@ -165,6 +293,18 @@ void handleRoot() {
   h += "<div class='panel'><h2>Thermal View</h2>";
   h += "<div class='thermal'><canvas id='cv' width='320' height='240'></canvas></div>";
   h += "</div>";
+
+  // Log Panel
+  h += "<div class='panel'><h2>Temperature Log</h2>";
+  h += "<div class='row'><span class='k'>Status</span><span class='v' id='logSt'>--</span></div>";
+  h += "<div class='row'><span class='k'>File Size</span><span class='v' id='logSz'>--</span></div>";
+  h += "<div class='row'><span class='k'>Free Space</span><span class='v' id='logFr'>--</span></div>";
+  h += "<div style='padding:10px 0;text-align:center'>";
+  h += "<button class='btn bg' onclick='logCmd(\"startlog\")'>Start Log</button>";
+  h += "<button class='btn br' onclick='logCmd(\"stoplog\")'>Stop Log</button>";
+  h += "<button class='btn bb' onclick='location.href=\"/download\"'>Download CSV</button>";
+  h += "<button class='btn by' onclick='if(confirm(\"Delete log?\"))logCmd(\"deletelog\")'>Delete</button>";
+  h += "</div></div>";
 
   // JavaScript
   h += "<script>";
@@ -200,7 +340,16 @@ void handleRoot() {
   h += "ctx.fillRect(x*pw,y*ph,pw,ph);}";
   h += "}).catch(()=>{});}";
 
-  h += "setInterval(upd,2000);setInterval(updThermal,1000);upd();updThermal();";
+  // Log status update
+  h += "function updLog(){fetch('/loginfo').then(r=>r.json()).then(d=>{";
+  h += "$('logSt').innerText=d.logging?'LOGGING':'Idle';";
+  h += "$('logSt').style.color=d.logging?'#0f0':'#888';";
+  h += "$('logSz').innerText=(d.size/1024).toFixed(1)+' KB';";
+  h += "$('logFr').innerText=(d.freeSpace/1024).toFixed(0)+' KB';";
+  h += "}).catch(()=>{});}";
+  h += "function logCmd(c){fetch('/'+c).then(r=>r.json()).then(()=>updLog()).catch(()=>{});}";
+
+  h += "setInterval(upd,2000);setInterval(updThermal,1000);setInterval(updLog,3000);upd();updThermal();updLog();";
   h += "</script></body></html>";
 
   server.send(200, "text/html", h);
@@ -348,6 +497,9 @@ void setup() {
   pinMode(BLUE_LED_PIN, OUTPUT);
   digitalWrite(BLUE_LED_PIN, LOW);
 
+  // SPIFFS
+  initSPIFFS();
+
   // DS18B20
   setupDS18B20();
 
@@ -363,11 +515,29 @@ void setup() {
   }
   Serial.printf("\n[WIFI] %s\n", WiFi.localIP().toString().c_str());
 
+  // ArduinoOTA
+  ArduinoOTA.setHostname("lyrat-sensor");
+  ArduinoOTA.onStart([]() { Serial.println("[OTA] Start"); });
+  ArduinoOTA.onEnd([]() { Serial.println("[OTA] Done"); });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("[OTA] %u%%\r", progress * 100 / total);
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("[OTA] Error %u\n", error);
+  });
+  ArduinoOTA.begin();
+  Serial.println("[OTA] Ready");
+
   // Web server routes
   server.on("/", handleRoot);
   server.on("/status", handleStatus);
   server.on("/thermaldata", handleThermalData);
   server.on("/rescan", handleRescan);
+  server.on("/startlog", handleStartLog);
+  server.on("/stoplog", handleStopLog);
+  server.on("/download", handleDownload);
+  server.on("/deletelog", handleDeleteLog);
+  server.on("/loginfo", handleLogInfo);
   server.begin();
 
   // Initial temp request
@@ -379,6 +549,7 @@ void setup() {
 
 // ============== LOOP ==============
 void loop() {
+  ArduinoOTA.handle();
   server.handleClient();
   yield();
 
@@ -400,9 +571,13 @@ void loop() {
     dsRequestTemps();
   }
 
-  // LED heartbeat
+  // Append temp log entry (every 2s when logging)
+  appendTempLog();
+
+  // LED heartbeat (fast blink when logging)
   static unsigned long lastBlink = 0;
-  if (millis() - lastBlink > 1000) {
+  unsigned long blinkInterval = loggingEnabled ? 200 : 1000;
+  if (millis() - lastBlink > blinkInterval) {
     lastBlink = millis();
     digitalWrite(BLUE_LED_PIN, !digitalRead(BLUE_LED_PIN));
   }
