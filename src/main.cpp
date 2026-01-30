@@ -258,7 +258,7 @@ void handleLogInfo() {
 void handleRoot() {
   String h = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
   h += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
-  h += "<title>LyraT Sensor Hub</title>";
+  h += "<title>LyraT Sensor Hub v8.0</title>";
   h += "<style>";
   h += "body{background:#111;color:#eee;font-family:monospace;margin:0;padding:10px}";
   h += "h1{color:#0af;text-align:center}";
@@ -272,7 +272,7 @@ void handleRoot() {
   h += ".btn{padding:8px 16px;border:none;border-radius:4px;cursor:pointer;font-family:monospace;font-size:0.9em;margin:3px}";
   h += ".bg{background:#0a0;color:#fff}.br{background:#a00;color:#fff}.bb{background:#07f;color:#fff}.by{background:#a80;color:#fff}";
   h += "</style></head><body>";
-  h += "<h1>LyraT Sensor Hub</h1>";
+  h += "<h1>LyraT Sensor Hub v8.0</h1>";
 
   // DS18B20 Panel
   h += "<div class='panel'><h2>DS18B20 Temperature</h2>";
@@ -492,7 +492,7 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  Serial.println("\n========== LyraT Sensor Hub ==========\n");
+  Serial.println("\n========== LyraT Sensor Hub v8.0 ==========\n");
 
   pinMode(BLUE_LED_PIN, OUTPUT);
   digitalWrite(BLUE_LED_PIN, LOW);
