@@ -258,98 +258,233 @@ void handleLogInfo() {
 void handleRoot() {
   String h = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
   h += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
-  h += "<title>LyraT Sensor Hub v8.0</title>";
+  h += "<title>LyraT Sensor Hub v9.0</title>";
   h += "<style>";
-  h += "body{background:#111;color:#eee;font-family:monospace;margin:0;padding:10px}";
-  h += "h1{color:#0af;text-align:center}";
-  h += ".panel{background:#1a1a2e;border-radius:8px;padding:15px;margin:10px 0}";
-  h += ".panel h2{margin:0 0 10px;color:#0cf;font-size:1.1em}";
-  h += ".row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #333}";
+  h += "body{background:#111;color:#eee;font-family:'Courier New',monospace;margin:0;padding:10px}";
+  h += "h1{color:#0af;text-align:center;font-size:1.3em;margin:8px 0}";
+  h += ".panel{background:#1a1a2e;border-radius:8px;padding:12px;margin:8px 0}";
+  h += ".panel h2{margin:0 0 8px;color:#0cf;font-size:1em}";
+  // 7-segment style displays
+  h += ".seg-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}";
+  h += ".seg-box{background:#0a0a1a;border:1px solid #333;border-radius:8px;padding:10px 14px;min-width:120px;text-align:center;flex:1}";
+  h += ".seg-label{font-size:0.7em;color:#888;text-transform:uppercase;letter-spacing:1px}";
+  h += ".seg-value{font-size:2.2em;font-weight:bold;letter-spacing:2px;margin:4px 0}";
+  h += ".seg-unit{font-size:0.6em;color:#888;margin-left:2px}";
+  // Info row
+  h += ".info-row{display:flex;justify-content:space-between;padding:4px 0;font-size:0.8em;color:#888}";
+  h += ".info-row .v{color:#0f0;font-weight:bold}";
+  // Chart
+  h += "#tc{width:100%;height:250px;border:1px solid #333;border-radius:4px;background:#0a0a1a}";
+  h += ".tbtn{padding:5px 12px;border:1px solid #555;border-radius:4px;cursor:pointer;font-family:'Courier New',monospace;font-size:0.8em;margin:2px;background:#222;color:#aaa}";
+  h += ".tbtn.active{background:#07f;color:#fff;border-color:#09f}";
+  // Legend
+  h += ".legend{display:flex;flex-wrap:wrap;gap:8px;font-size:0.75em;padding:6px 0}";
+  h += ".legend span{cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid transparent}";
+  h += ".legend span.off{opacity:0.3;text-decoration:line-through}";
+  // Log panel
+  h += ".row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #222;font-size:0.85em}";
   h += ".row .k{color:#888}.row .v{color:#0f0;font-weight:bold}";
-  h += ".thermal{text-align:center;margin:10px 0}";
-  h += "canvas{border:1px solid #333;border-radius:4px;max-width:100%}";
-  h += ".warn{color:#f80}.err{color:#f44}.ok{color:#0f0}";
-  h += ".btn{padding:8px 16px;border:none;border-radius:4px;cursor:pointer;font-family:monospace;font-size:0.9em;margin:3px}";
+  h += ".btn{padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-family:monospace;font-size:0.8em;margin:2px}";
   h += ".bg{background:#0a0;color:#fff}.br{background:#a00;color:#fff}.bb{background:#07f;color:#fff}.by{background:#a80;color:#fff}";
   h += "</style></head><body>";
-  h += "<h1>LyraT Sensor Hub v8.0</h1>";
+  h += "<h1>LyraT Sensor Hub v9.0</h1>";
 
-  // DS18B20 Panel
-  h += "<div class='panel'><h2>DS18B20 Temperature</h2>";
-  h += "<div class='row'><span class='k'>Sensor 1</span><span class='v' id='t1'>--</span></div>";
-  h += "<div class='row'><span class='k'>Sensor 2</span><span class='v' id='t2'>--</span></div>";
-  h += "<div class='row'><span class='k'>Sensors found</span><span class='v' id='cnt'>--</span></div>";
+  // === Seg-box temperature displays ===
+  h += "<div class='panel'><h2>Temperature</h2>";
+  h += "<div class='seg-row'>";
+  h += "<div class='seg-box'><div class='seg-label'>T1 (DS18B20)</div><div class='seg-value' id='sv1' style='color:#0f0'>--</div></div>";
+  h += "<div class='seg-box'><div class='seg-label'>T2 (DS18B20)</div><div class='seg-value' id='sv2' style='color:#0ff'>--</div></div>";
+  h += "<div class='seg-box'><div class='seg-label'>MLX Max</div><div class='seg-value' id='sv3' style='color:#f44'>--</div></div>";
+  h += "<div class='seg-box'><div class='seg-label'>MLX Avg</div><div class='seg-value' id='sv4' style='color:#f80'>--</div></div>";
+  h += "</div>";
+  h += "<div class='info-row' style='margin-top:6px'><span>DS18B20: <span class='v' id='cnt'>-</span> sensors</span>";
+  h += "<span>MLX: <span class='v' id='mlxst'>-</span></span></div>";
   h += "</div>";
 
-  // MLX90640 Panel
-  h += "<div class='panel'><h2>MLX90640 Thermal Camera</h2>";
-  h += "<div class='row'><span class='k'>Max Temp</span><span class='v' id='tmax'>--</span></div>";
-  h += "<div class='row'><span class='k'>Min Temp</span><span class='v' id='tmin'>--</span></div>";
-  h += "<div class='row'><span class='k'>Avg Temp</span><span class='v' id='tavg'>--</span></div>";
-  h += "<div class='row'><span class='k'>Status</span><span class='v' id='mlxst'>--</span></div>";
+  // === Seg-box battery tester displays ===
+  h += "<div class='panel'><h2>Battery Tester (192.168.1.40)</h2>";
+  h += "<div class='seg-row'>";
+  h += "<div class='seg-box'><div class='seg-label'>Voltage</div><div class='seg-value' id='sv5' style='color:#0ff'>--<span class='seg-unit'>V</span></div></div>";
+  h += "<div class='seg-box'><div class='seg-label'>Current</div><div class='seg-value' id='sv6' style='color:#f80'>--<span class='seg-unit'>A</span></div></div>";
+  h += "<div class='seg-box'><div class='seg-label'>Power</div><div class='seg-value' id='sv7' style='color:#fff'>--<span class='seg-unit'>W</span></div></div>";
+  h += "</div>";
+  h += "<div class='info-row' style='margin-top:6px'><span>Status: <span class='v' id='btst'>-</span></span></div>";
   h += "</div>";
 
-  // Thermal Image
-  h += "<div class='panel'><h2>Thermal View</h2>";
-  h += "<div class='thermal'><canvas id='cv' width='320' height='240'></canvas></div>";
+  // === Chart panel ===
+  h += "<div class='panel'><h2>Real-time Chart</h2>";
+  // Time range buttons
+  h += "<div style='text-align:center;margin-bottom:6px'>";
+  h += "<button class='tbtn' onclick='setRange(300)'>5m</button>";
+  h += "<button class='tbtn' onclick='setRange(900)'>15m</button>";
+  h += "<button class='tbtn active' onclick='setRange(1800)'>30m</button>";
+  h += "<button class='tbtn' onclick='setRange(3600)'>1h</button>";
+  h += "<button class='tbtn' onclick='setRange(0)'>All</button>";
   h += "</div>";
+  h += "<canvas id='tc'></canvas>";
+  // Legend
+  h += "<div class='legend' id='leg'>";
+  h += "<span style='color:#0f0' onclick='togS(0)'>&#9632; T1</span>";
+  h += "<span style='color:#0ff' onclick='togS(1)'>&#9632; T2</span>";
+  h += "<span style='color:#f44' onclick='togS(2)'>&#9632; MLX Max</span>";
+  h += "<span style='color:#f80' onclick='togS(3)'>&#9632; MLX Avg</span>";
+  h += "<span style='color:#0af' onclick='togS(4)'>&#9632; Voltage</span>";
+  h += "<span style='color:#fa0' onclick='togS(5)'>&#9632; Current</span>";
+  h += "<span style='color:#fff' onclick='togS(6)'>&#9632; Power</span>";
+  h += "</div></div>";
 
-  // Log Panel
+  // === Log Panel (compact) ===
   h += "<div class='panel'><h2>Temperature Log</h2>";
   h += "<div class='row'><span class='k'>Status</span><span class='v' id='logSt'>--</span></div>";
   h += "<div class='row'><span class='k'>File Size</span><span class='v' id='logSz'>--</span></div>";
   h += "<div class='row'><span class='k'>Free Space</span><span class='v' id='logFr'>--</span></div>";
-  h += "<div style='padding:10px 0;text-align:center'>";
-  h += "<button class='btn bg' onclick='logCmd(\"startlog\")'>Start Log</button>";
-  h += "<button class='btn br' onclick='logCmd(\"stoplog\")'>Stop Log</button>";
-  h += "<button class='btn bb' onclick='location.href=\"/download\"'>Download CSV</button>";
-  h += "<button class='btn by' onclick='if(confirm(\"Delete log?\"))logCmd(\"deletelog\")'>Delete</button>";
+  h += "<div style='padding:6px 0;text-align:center'>";
+  h += "<button class='btn bg' onclick='logCmd(\"startlog\")'>Start</button>";
+  h += "<button class='btn br' onclick='logCmd(\"stoplog\")'>Stop</button>";
+  h += "<button class='btn bb' onclick='location.href=\"/download\"'>CSV</button>";
+  h += "<button class='btn by' onclick='if(confirm(\"Delete log?\"))logCmd(\"deletelog\")'>Del</button>";
   h += "</div></div>";
 
-  // JavaScript
+  // ========== JavaScript ==========
   h += "<script>";
-  h += "var $=function(id){return document.getElementById(id);};";
+  h += "var $=function(id){return document.getElementById(id)};";
 
-  // Color map (blue->green->yellow->red->white)
-  h += "function tempColor(t,mn,mx){";
-  h += "var r=0,g=0,b=0,f=(t-mn)/(mx-mn||1);f=Math.max(0,Math.min(1,f));";
-  h += "if(f<0.25){b=255;g=Math.round(f*4*255);}";
-  h += "else if(f<0.5){g=255;b=Math.round((0.5-f)*4*255);}";
-  h += "else if(f<0.75){g=255;r=Math.round((f-0.5)*4*255);}";
-  h += "else{r=255;g=Math.round((1-f)*4*255);}";
-  h += "return 'rgb('+r+','+g+','+b+')';}";
+  // --- Data storage ---
+  h += "var HKEY='lyrat_hist',MAXPTS=3600,MAXAGE=7200000;"; // max 3600 points, 2h
+  h += "var hist=[],range=1800,seriesOn=[1,1,1,1,1,1,1];"; // default 30m
+  h += "var btV=null,btI=null,btP=null;"; // battery tester values
 
-  // Status update
-  h += "function upd(){fetch('/status').then(r=>r.json()).then(d=>{";
-  h += "$('t1').innerText=d.t1>-100?d.t1.toFixed(2)+' C':'N/C';";
-  h += "$('t2').innerText=d.t2>-100?d.t2.toFixed(2)+' C':'N/C';";
+  // Load history from localStorage
+  h += "try{var s=localStorage.getItem(HKEY);if(s){hist=JSON.parse(s);";
+  h += "var now=Date.now(),cutoff=now-MAXAGE;";
+  h += "hist=hist.filter(function(p){return p[0]>cutoff});}}catch(e){hist=[];}";
+
+  // Save history to localStorage
+  h += "function saveHist(){try{localStorage.setItem(HKEY,JSON.stringify(hist))}catch(e){}}";
+
+  // Decimate if too many points
+  h += "function decimate(){if(hist.length<=MAXPTS)return;var n=[];";
+  h += "var step=Math.ceil(hist.length/(MAXPTS/2));";
+  h += "for(var i=0;i<hist.length;i+=step)n.push(hist[i]);";
+  h += "hist=n;}";
+
+  // --- Time range ---
+  h += "function setRange(s){range=s;";
+  h += "var btns=document.querySelectorAll('.tbtn');";
+  h += "btns.forEach(function(b){b.className='tbtn'});";
+  h += "event.target.className='tbtn active';drawChart();}";
+
+  // --- Toggle series ---
+  h += "function togS(i){seriesOn[i]=seriesOn[i]?0:1;";
+  h += "var spans=$('leg').children;";
+  h += "spans[i].className=seriesOn[i]?'':'off';drawChart();}";
+
+  // --- Chart drawing ---
+  h += "function drawChart(){";
+  h += "var cv=$('tc'),ctx=cv.getContext('2d');";
+  h += "var dpr=window.devicePixelRatio||1;";
+  h += "var w=cv.clientWidth,h=cv.clientHeight;";
+  h += "cv.width=w*dpr;cv.height=h*dpr;ctx.scale(dpr,dpr);";
+  // Margins
+  h += "var ml=50,mr=55,mt=10,mb=30;";
+  h += "var pw=w-ml-mr,ph=h-mt-mb;";
+  h += "if(pw<10||ph<10)return;";
+  // Filter data by time range
+  h += "var now=Date.now(),data;";
+  h += "if(range>0){var cutoff=now-range*1000;";
+  h += "data=hist.filter(function(p){return p[0]>cutoff});}";
+  h += "else{data=hist;}";
+  h += "if(data.length<2){ctx.fillStyle='#555';ctx.font='14px Courier New';";
+  h += "ctx.fillText('Waiting for data...',w/2-70,h/2);return;}";
+  // Compute min/max for left Y (temps idx 1-4) and right Y (V/I/P idx 5-7)
+  h += "var tMin=999,tMax=-999,eMin=999,eMax=-999;";
+  h += "for(var i=0;i<data.length;i++){var d=data[i];";
+  h += "for(var j=1;j<=4;j++){if(seriesOn[j-1]&&d[j]!=null){if(d[j]<tMin)tMin=d[j];if(d[j]>tMax)tMax=d[j];}}";
+  h += "for(var j=5;j<=7;j++){if(seriesOn[j-1]&&d[j]!=null){if(d[j]<eMin)eMin=d[j];if(d[j]>eMax)eMax=d[j];}}}";
+  // Pad ranges
+  h += "if(tMin>=tMax){tMin-=1;tMax+=1;}var tPad=(tMax-tMin)*0.1;tMin-=tPad;tMax+=tPad;";
+  h += "if(eMin>=eMax){eMin-=0.5;eMax+=0.5;}var ePad=(eMax-eMin)*0.1;eMin-=ePad;eMax+=ePad;";
+  h += "var tS=data[0][0],tE=data[data.length-1][0],tR=tE-tS||1;";
+  // Background
+  h += "ctx.fillStyle='#0a0a1a';ctx.fillRect(0,0,w,h);";
+  // Grid
+  h += "ctx.strokeStyle='#222';ctx.lineWidth=0.5;";
+  h += "for(var i=0;i<=5;i++){var y=mt+ph*(i/5);ctx.beginPath();ctx.moveTo(ml,y);ctx.lineTo(ml+pw,y);ctx.stroke();}";
+  // Left Y labels (temps)
+  h += "ctx.fillStyle='#0f0';ctx.font='10px Courier New';ctx.textAlign='right';";
+  h += "for(var i=0;i<=5;i++){var v=tMax-(tMax-tMin)*(i/5);";
+  h += "ctx.fillText(v.toFixed(1),ml-4,mt+ph*(i/5)+4);}";
+  // Right Y labels (electrical)
+  h += "ctx.fillStyle='#0af';ctx.textAlign='left';";
+  h += "for(var i=0;i<=5;i++){var v=eMax-(eMax-eMin)*(i/5);";
+  h += "ctx.fillText(v.toFixed(1),ml+pw+4,mt+ph*(i/5)+4);}";
+  // X axis labels
+  h += "ctx.fillStyle='#888';ctx.textAlign='center';";
+  h += "for(var i=0;i<=4;i++){var t=tS+tR*(i/4);";
+  h += "var ago=Math.round((now-t)/1000);var mm=Math.floor(ago/60);var ss=ago%60;";
+  h += "ctx.fillText('-'+mm+'m'+('0'+ss).slice(-2)+'s',ml+pw*(i/4),h-mb+15);}";
+  // Draw series
+  h += "var colors=['#0f0','#0ff','#f44','#f80','#0af','#fa0','#fff'];";
+  h += "ctx.lineWidth=1.5;";
+  h += "for(var s=0;s<7;s++){if(!seriesOn[s])continue;";
+  h += "var idx=s+1;var isE=s>=4;";
+  h += "var yMin=isE?eMin:tMin,yMax=isE?eMax:tMax,yR=yMax-yMin||1;";
+  h += "ctx.strokeStyle=colors[s];ctx.beginPath();var started=0;";
+  h += "for(var i=0;i<data.length;i++){var d=data[i];";
+  h += "if(d[idx]==null)continue;";
+  h += "var x=ml+pw*((d[0]-tS)/tR);";
+  h += "var y=mt+ph*(1-(d[idx]-yMin)/yR);";
+  h += "if(!started){ctx.moveTo(x,y);started=1;}else{ctx.lineTo(x,y);}}";
+  h += "ctx.stroke();}";
+  h += "}"; // end drawChart
+
+  // --- Battery tester fetch ---
+  h += "function fetchBT(){";
+  h += "fetch('http://192.168.1.40/status').then(function(r){return r.json()}).then(function(d){";
+  h += "btV=d.v;btI=d.i;btP=d.p;";
+  // Update seg-boxes
+  h += "if(btV!=null)$('sv5').innerHTML=btV.toFixed(2)+'<span class=\"seg-unit\">V</span>';";
+  h += "if(btI!=null)$('sv6').innerHTML=Math.abs(btI).toFixed(2)+'<span class=\"seg-unit\">A</span>';";
+  h += "if(btP!=null)$('sv7').innerHTML=Math.abs(btP).toFixed(1)+'<span class=\"seg-unit\">W</span>';";
+  h += "$('btst').innerText='Online';$('btst').style.color='#0f0';";
+  h += "}).catch(function(){";
+  h += "$('btst').innerText='Offline';$('btst').style.color='#f44';";
+  h += "});}";
+
+  // --- Main update ---
+  h += "function upd(){fetch('/status').then(function(r){return r.json()}).then(function(d){";
+  // Update seg-box displays
+  h += "var t1=d.t1>-100?d.t1:null,t2=d.t2>-100?d.t2:null;";
+  h += "$('sv1').innerHTML=t1!=null?t1.toFixed(1)+'<span class=\"seg-unit\">&deg;C</span>':'N/C';";
+  h += "$('sv2').innerHTML=t2!=null?t2.toFixed(1)+'<span class=\"seg-unit\">&deg;C</span>':'N/C';";
+  h += "$('sv3').innerHTML=d.mlxMax.toFixed(1)+'<span class=\"seg-unit\">&deg;C</span>';";
+  h += "$('sv4').innerHTML=d.mlxAvg.toFixed(1)+'<span class=\"seg-unit\">&deg;C</span>';";
   h += "$('cnt').innerText=d.dsCount;";
-  h += "$('tmax').innerText=d.mlxMax.toFixed(1)+' C';";
-  h += "$('tmin').innerText=d.mlxMin.toFixed(1)+' C';";
-  h += "$('tavg').innerText=d.mlxAvg.toFixed(1)+' C';";
   h += "$('mlxst').innerText=d.mlxOk?'Connected':'NOT FOUND';";
-  h += "$('mlxst').className='v '+(d.mlxOk?'ok':'err');";
-  h += "}).catch(()=>{});}";
+  h += "$('mlxst').style.color=d.mlxOk?'#0f0':'#f44';";
+  // Add data point: [ts, t1, t2, mlxMax, mlxAvg, voltage, current, power]
+  h += "var pt=[Date.now(),t1,t2,d.mlxMax,d.mlxAvg,btV,btI,btP];";
+  h += "hist.push(pt);";
+  // Trim old data
+  h += "var cutoff=Date.now()-MAXAGE;";
+  h += "while(hist.length>0&&hist[0][0]<cutoff)hist.shift();";
+  h += "decimate();saveHist();drawChart();";
+  h += "}).catch(function(){});}";
 
-  // Thermal image update
-  h += "function updThermal(){fetch('/thermaldata').then(r=>r.json()).then(d=>{";
-  h += "var cv=$('cv'),ctx=cv.getContext('2d');";
-  h += "var pw=cv.width/32,ph=cv.height/24;";
-  h += "for(var y=0;y<24;y++)for(var x=0;x<32;x++){";
-  h += "ctx.fillStyle=tempColor(d.pixels[y*32+x],d.min,d.max);";
-  h += "ctx.fillRect(x*pw,y*ph,pw,ph);}";
-  h += "}).catch(()=>{});}";
-
-  // Log status update
-  h += "function updLog(){fetch('/loginfo').then(r=>r.json()).then(d=>{";
+  // --- Log status ---
+  h += "function updLog(){fetch('/loginfo').then(function(r){return r.json()}).then(function(d){";
   h += "$('logSt').innerText=d.logging?'LOGGING':'Idle';";
   h += "$('logSt').style.color=d.logging?'#0f0':'#888';";
   h += "$('logSz').innerText=(d.size/1024).toFixed(1)+' KB';";
   h += "$('logFr').innerText=(d.freeSpace/1024).toFixed(0)+' KB';";
-  h += "}).catch(()=>{});}";
-  h += "function logCmd(c){fetch('/'+c).then(r=>r.json()).then(()=>updLog()).catch(()=>{});}";
+  h += "}).catch(function(){});}";
+  h += "function logCmd(c){fetch('/'+c).then(function(r){return r.json()}).then(function(){updLog()}).catch(function(){});}";
 
-  h += "setInterval(upd,2000);setInterval(updThermal,1000);setInterval(updLog,3000);upd();updThermal();updLog();";
+  // --- Init ---
+  h += "setInterval(upd,2000);setInterval(fetchBT,2000);setInterval(updLog,5000);";
+  h += "upd();fetchBT();updLog();";
+  h += "window.addEventListener('resize',drawChart);";
+  h += "setTimeout(drawChart,100);";
   h += "</script></body></html>";
 
   server.send(200, "text/html", h);
@@ -492,7 +627,7 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  Serial.println("\n========== LyraT Sensor Hub v8.0 ==========\n");
+  Serial.println("\n========== LyraT Sensor Hub v9.0 ==========\n");
 
   pinMode(BLUE_LED_PIN, OUTPUT);
   digitalWrite(BLUE_LED_PIN, LOW);
